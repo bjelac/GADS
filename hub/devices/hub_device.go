@@ -32,6 +32,7 @@ type LocalHubDevice struct {
 	Connected                bool   `json:"connected"`
 	ProviderState            string `json:"provider_state"`
 	LastUpdatedTimestamp     int64  `json:"last_updated_timestamp"`
+	SessionCleanupInProgress bool   `json:"-" bson:"-"` // protected by Mu; blocks reuse until DELETE completes
 	SessionID                string `json:"-"`
 	IsRunningAutomation      bool   `json:"is_running_automation"`
 	LastAutomationActionTS   int64  `json:"last_automation_action_ts"`
