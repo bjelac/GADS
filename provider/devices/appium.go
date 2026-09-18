@@ -92,7 +92,7 @@ func startAppium(d PlatformDevice, capabilities models.AppiumServerCapabilities)
 		"--relaxed-security",
 		"--default-capabilities", string(capabilitiesJson))
 
-	logger.ProviderLogger.LogDebugf("appium_lifecycle", "Starting Appium udid=%s port=%s", udid, appiumPort)
+	logger.ProviderLogger.LogDebugf("device_setup", "Starting Appium on device `%s` with command `%s`", udid, cmd.Args)
 
 	if err := cmd.Start(); err != nil {
 		logger.ProviderLogger.LogErrorf("device_setup", "Error executing `%s` for device `%v` - %v", cmd.Args, udid, err)

@@ -401,6 +401,10 @@ func resolveGridUser(clientSecret string) (gridUser, *W3CError) {
 // still held via a UI WebSocket or an API lease, whose lock must survive
 func abortAutomationClaim(foundDevice *devices.LocalHubDevice) {
 	foundDevice.Mu.Lock()
+	if foundDevice.SessionCleanupInProgress {
+		foundDevice.Mu.Unlock()
+		return
+	}
 	foundDevice.IsAvailableForAutomation = true
 	foundDevice.IsRunningAutomation = false
 	foundDevice.ReleaseLockIfNotHeld()
@@ -531,8 +535,10 @@ func GridCreateSession(c *gin.Context) {
 		// same client is not raced; any other error releases the lock right away
 		if resp.StatusCode == http.StatusInternalServerError {
 			foundDevice.Mu.Lock()
-			foundDevice.IsAvailableForAutomation = true
-			foundDevice.IsRunningAutomation = false
+			if !foundDevice.SessionCleanupInProgress {
+				foundDevice.IsAvailableForAutomation = true
+				foundDevice.IsRunningAutomation = false
+			}
 			foundDevice.Mu.Unlock()
 			devices.NotifyDeviceFreed()
 			go func() {
@@ -874,7 +880,7 @@ func findAvailableDevice(candidate gridCandidate, allowedWorkspaceIDs []string, 
 		}
 
 		d.Mu.Lock()
-		if d.IsAvailableForAutomation && !d.SessionCleanupInProgress {
+		if d.IsAvailableForAutomation {
 			d.IsAvailableForAutomation = false
 			d.Mu.Unlock()
 			return d, nil
@@ -893,7 +899,7 @@ func findAvailableDevice(candidate gridCandidate, allowedWorkspaceIDs []string, 
 			connected := localDevice.Connected
 			state := localDevice.ProviderState
 			lastUpdated := localDevice.LastUpdatedTimestamp
-			available := localDevice.IsAvailableForAutomation && !localDevice.SessionCleanupInProgress
+			available := localDevice.IsAvailableForAutomation
 			usage := localDevice.Device.Usage
 			appiumEnabled := localDevice.AppiumEnabled
 			wsID := localDevice.Device.WorkspaceID
@@ -939,7 +945,7 @@ func findAvailableDevice(candidate gridCandidate, allowedWorkspaceIDs []string, 
 
 			if osVersion == candidate.PlatformVersion {
 				device.Mu.Lock()
-				if device.IsAvailableForAutomation && !device.SessionCleanupInProgress {
+				if device.IsAvailableForAutomation {
 					device.IsAvailableForAutomation = false
 					device.Mu.Unlock()
 					foundDevice = device
@@ -963,7 +969,7 @@ func findAvailableDevice(candidate gridCandidate, allowedWorkspaceIDs []string, 
 				deviceV, _ := semver.NewVersion(osVersion)
 				if constraint.Check(deviceV) {
 					device.Mu.Lock()
-					if device.IsAvailableForAutomation && !device.SessionCleanupInProgress {
+					if device.IsAvailableForAutomation {
 						device.IsAvailableForAutomation = false
 						device.Mu.Unlock()
 						foundDevice = device
@@ -977,7 +983,7 @@ func findAvailableDevice(candidate gridCandidate, allowedWorkspaceIDs []string, 
 		// No platform version requested — take the first available
 		for _, device := range availableDevices {
 			device.Mu.Lock()
-			if device.IsAvailableForAutomation && !device.SessionCleanupInProgress {
+			if device.IsAvailableForAutomation {
 				device.IsAvailableForAutomation = false
 				device.Mu.Unlock()
 				foundDevice = device

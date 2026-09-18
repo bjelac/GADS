@@ -35,10 +35,22 @@ func TestExpiredSessionWaitsForCleanup(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("cleanup did not start")
 	}
+	// A concurrent release or failed-create callback must leave cleanup in
+	// charge of the claim, not merely rely on device selection to reject it.
+	d.Mu.Lock()
+	d.ReleaseFromAutomation()
+	d.Mu.Unlock()
+	abortAutomationClaim(d)
 	d.Mu.RLock()
+	assert.True(t, d.IsRunningAutomation)
 	assert.False(t, d.IsAvailableForAutomation, "session B must not claim A's device during DELETE")
 	assert.Equal(t, "session-a", d.SessionID)
 	d.Mu.RUnlock()
+	for _, candidate := range []gridCandidate{{DeviceUDID: "cleanup-device"}, {PlatformName: "Android"}} {
+		found, err := findAvailableDevice(candidate, []string{"ws1"}, "test-user", "tenant1")
+		assert.Error(t, err)
+		assert.Nil(t, found)
+	}
 	close(finish)
 	assert.Eventually(t, func() bool {
 		d.Mu.RLock()
