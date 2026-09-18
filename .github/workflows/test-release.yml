@@ -78,10 +78,12 @@ jobs:
             --output "$RUNNER_TEMP/published-gads-linux.zip"
           cmp dist/gads-linux.zip "$RUNNER_TEMP/published-gads-linux.zip"
 
-  darwin-arm64:
+  darwin-amd64:
     if: github.repository == 'bjelac/GADS'
     needs: linux
-    runs-on: macos-latest
+    # Cross-compilation keeps this independent of the availability of an
+    # Intel macOS runner. The binary is validated by its Mach-O architecture.
+    runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ inputs.tag || 'v6.0.0-test.2' }}
     steps:
@@ -111,25 +113,25 @@ jobs:
           go install github.com/swaggo/swag/cmd/swag@v1.16.4
           "$(go env GOPATH)/bin/swag" init -g hub/hub.go -o docs
 
-      - name: Build and package macOS arm64
+      - name: Build and package macOS Intel amd64
         env:
           CGO_ENABLED: '0'
           GOOS: darwin
-          GOARCH: arm64
+          GOARCH: amd64
         run: |
           mkdir -p dist
           go build -trimpath -tags ui -ldflags "-X main.AppVersion=$RELEASE_TAG" -o dist/GADS .
-          file dist/GADS | grep -E 'Mach-O.*arm64'
-          (cd dist && zip gads-darwin-arm64.zip GADS)
-          unzip -t dist/gads-darwin-arm64.zip
+          file dist/GADS | grep -E 'Mach-O.*x86_64'
+          (cd dist && zip gads-darwin-amd64.zip GADS)
+          unzip -t dist/gads-darwin-amd64.zip
 
-      - name: Upload macOS arm64 ZIP to the test release
+      - name: Upload macOS Intel ZIP to the test release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release upload "$RELEASE_TAG" dist/gads-darwin-arm64.zip --clobber
+          gh release upload "$RELEASE_TAG" dist/gads-darwin-amd64.zip --clobber
           curl --fail --location --retry 3 \
-            "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/gads-darwin-arm64.zip" \
-            --output "$RUNNER_TEMP/published-gads-darwin-arm64.zip"
-          cmp dist/gads-darwin-arm64.zip "$RUNNER_TEMP/published-gads-darwin-arm64.zip"
+            "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/gads-darwin-amd64.zip" \
+            --output "$RUNNER_TEMP/published-gads-darwin-amd64.zip"
+          cmp dist/gads-darwin-amd64.zip "$RUNNER_TEMP/published-gads-darwin-amd64.zip"
