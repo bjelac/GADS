@@ -1,0 +1,79 @@
+name: Fork Linux test release
+
+on:
+  push:
+    branches: [ci/355-test-release]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing test tag to build and publish
+        required: true
+        default: v6.0.0-test.2
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-test-release-${{ inputs.tag || 'v6.0.0-test.2' }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    if: github.repository == 'bjelac/GADS'
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || 'v6.0.0-test.2' }}
+    steps:
+      - name: Check out the exact tagged source without the private UI submodule
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          submodules: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download the matching public UI bundle
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/shamanec/GADS/releases/download/v6.0.0/ui-files.zip \
+            --output "$RUNNER_TEMP/ui-files.zip"
+          echo "5dc85e4800e79671501d87b27bb34602010dc402e126c962c15db501a1e13589  $RUNNER_TEMP/ui-files.zip" | sha256sum --check
+          mkdir -p hub-ui
+          unzip -q "$RUNNER_TEMP/ui-files.zip" -d hub-ui
+          test -f hub-ui/build/index.html
+
+      - name: Generate required Swagger files
+        run: |
+          go install github.com/swaggo/swag/cmd/swag@v1.16.4
+          "$(go env GOPATH)/bin/swag" init -g hub/hub.go -o docs
+
+      - name: Build and package Linux amd64
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p dist
+          go build -trimpath -tags ui -ldflags "-X main.AppVersion=$RELEASE_TAG" -o dist/GADS .
+          test "$(dist/GADS version)" = "$RELEASE_TAG"
+          (cd dist && zip gads-linux.zip GADS)
+          unzip -t dist/gads-linux.zip
+
+      - name: Create the test release and upload the ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --prerelease \
+              --title "GADS $RELEASE_TAG" \
+              --notes "Linux amd64 test build for issue #355. Built from the existing tag with the public v6.0.0 UI bundle. Includes GADS in gads-linux.zip."
+          fi
+          gh release upload "$RELEASE_TAG" dist/gads-linux.zip --clobber
+          curl --fail --location --retry 3 \
+            "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/gads-linux.zip" \
+            --output "$RUNNER_TEMP/published-gads-linux.zip"
+          cmp dist/gads-linux.zip "$RUNNER_TEMP/published-gads-linux.zip"
